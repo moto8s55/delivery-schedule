@@ -1,0 +1,28 @@
+# holidays.txt - Custom holidays
+# Format: YYYY-MM-DD (one per line)
+# Lines starting with # are comments
+# Note: Weekends and Japanese public holidays are excluded automatically.
+#       Only add company-specific holidays here.
+
+# --- 2025 ---
+# Year-end / New Year
+2025-12-29
+2025-12-30
+2025-12-31
+
+# Summer holidays
+2025-08-13
+2025-08-14
+2025-08-15
+
+# --- 2026 ---
+# Year-end / New Year
+2026-01-02
+2026-01-03
+
+# Summer holidays
+2026-08-13
+2026-08-14
+
+# Inventory day (example)
+# 2026-06-30
