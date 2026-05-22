@@ -1,0 +1,46 @@
+name: Generate Delivery Schedule
+
+on:
+  # 平日17:00 JST（= UTC 08:00）のみ実行
+  # cron は UTC 基準 / 0 8 * * 1-5 = 月〜金 08:00 UTC = 17:00 JST
+  schedule:
+    - cron: '0 8 * * 1-5'
+
+  # 手動実行（テスト用）
+  workflow_dispatch:
+
+  # orders.xlsx / holidays.txt を更新した時も即時実行
+  push:
+    paths:
+      - 'orders.xlsx'
+      - 'holidays.txt'
+      - 'delivery.py'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run delivery.py
+        run: python delivery.py
+
+      - name: Commit & push delivery.html
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add delivery.html
+          git diff --staged --quiet || git commit -m "chore: update delivery.html [skip ci]"
+          git push
