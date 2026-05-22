@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="3600">
   <title>Delivery Schedule</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -73,11 +72,21 @@
   <div class="crt">
     <div class="row">
       <span class="lbl">TIME</span>
-      <span class="val">17:40</span>
+      <span class="val" id="clock">--:--</span>
       <span class="sep">&#9658;</span>
       <span class="lbl">DELIVERY</span>
       <span class="val">WED, MAY 27<span class="cursor"></span></span>
     </div>
   </div>
+  <script>
+    function tick() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = hh + ':' + mm;
+    }
+    tick();
+    setInterval(tick, 1000);
+  </script>
 </body>
 </html>
