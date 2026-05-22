@@ -9,6 +9,7 @@ delivery.py - 搬入日自動計算 & HTML生成
 import datetime
 import os
 from pathlib import Path
+import zoneinfo
 
 try:
     import openpyxl
@@ -230,7 +231,7 @@ def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
 # メイン
 # ============================================================
 def main():
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Tokyo")).replace(tzinfo=None)
     print(f"[{now:%Y/%m/%d %H:%M:%S}] delivery.py started")
 
     # カレンダーから稼働日を読み込み
