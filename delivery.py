@@ -9,7 +9,6 @@ delivery.py - 搬入日自動計算 & HTML生成
 import datetime
 import os
 from pathlib import Path
-import zoneinfo
 
 try:
     import openpyxl
@@ -139,14 +138,12 @@ def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
     wd  = WEEKDAY_EN[delivery.weekday()]
     mon = MONTH_EN[delivery.month - 1]
     delivery_str = f"{wd}, {mon} {delivery.day}"
-    time_str     = now.strftime("%H:%M")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="3600">
   <title>Delivery Schedule</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -216,12 +213,22 @@ def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
   <div class="crt">
     <div class="row">
       <span class="lbl">TIME</span>
-      <span class="val">{time_str}</span>
+      <span class="val" id="clock">--:--</span>
       <span class="sep">&#9658;</span>
       <span class="lbl">DELIVERY</span>
       <span class="val">{delivery_str}<span class="cursor"></span></span>
     </div>
   </div>
+  <script>
+    function tick() {{
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = hh + ':' + mm;
+    }}
+    tick();
+    setInterval(tick, 1000);
+  </script>
 </body>
 </html>
 """
@@ -231,7 +238,7 @@ def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
 # メイン
 # ============================================================
 def main():
-    now = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Tokyo")).replace(tzinfo=None)
+    now = datetime.datetime.now()
     print(f"[{now:%Y/%m/%d %H:%M:%S}] delivery.py started")
 
     # カレンダーから稼働日を読み込み
@@ -285,4 +292,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
