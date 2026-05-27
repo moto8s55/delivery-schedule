@@ -1,143 +1,41 @@
 """
-delivery.py - 搬入日自動計算 & HTML生成
-- daily_omura_2.xlsx の「カレンダー」シートで稼働日を判定
-- topシートの最新日付を注文日として使用
-- 中2日後の稼働日を搬入日として計算
-- レトロCRTデザイン1行HTMLを生成
+delivery.py - 搬入日HTML生成
+- holidays.txt から休業日リストを読み込む
+- 搬入日の計算はブラウザ側JS（毎秒リアルタイム更新）
+- GitHub Actions（Ubuntu）で動作するよう Excelへの依存を除去
 """
 
 import datetime
-import os
 from pathlib import Path
 
-try:
-    import openpyxl
-except ImportError:
-    openpyxl = None
-    print("ERROR: openpyxl not installed.")
-
-# ============================================================
-# 設定
-# ============================================================
-EXCEL_FILE  = Path(r"C:\Users\moto8\OneDrive\デスクトップ\daily_omura_2.xlsx")
-OUTPUT_HTML = Path(__file__).parent / "delivery.html"
-SKIP_DAYS   = 2  # 中N日
-
-WEEKDAY_EN = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-MONTH_EN   = ["JAN","FEB","MAR","APR","MAY","JUN",
-               "JUL","AUG","SEP","OCT","NOV","DEC"]
+OUTPUT_HTML   = Path(__file__).parent / "delivery.html"
+HOLIDAYS_FILE = Path(__file__).parent / "holidays.txt"
 
 
 # ============================================================
-# カレンダーシートから稼働日セットを読み込む
+# holidays.txt を読み込む
+# 書式：1行1日付、YYYY-MM-DD、# でコメント
 # ============================================================
-def load_working_days(excel_path: Path) -> set:
-    """
-    カレンダーシートの稼働フラグ=1の日付をセットで返す
-    """
-    working = set()
-    if openpyxl is None or not excel_path.exists():
-        print(f"  WARN: {excel_path.name} not found. Using weekdays only.")
-        return working
-
-    wb = openpyxl.load_workbook(str(excel_path), data_only=True)
-    if "カレンダー" not in wb.sheetnames:
-        print("  WARN: カレンダーシートが見つかりません。")
-        return working
-
-    ws = wb["カレンダー"]
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        date_val, _, flag = row[0], row[1], row[2]
-        if not date_val or flag is None:
-            continue
-        if isinstance(date_val, datetime.datetime):
-            d = date_val.date()
-        elif isinstance(date_val, datetime.date):
-            d = date_val
-        else:
-            continue
-        if int(flag) == 1:
-            working.add(d)
-
-    print(f"  Working days loaded: {len(working)} days")
-    return working
+def load_holidays(path: Path) -> list[str]:
+    if not path.exists():
+        print(f"  WARN: {path.name} not found. No custom holidays.")
+        return []
+    holidays = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            holidays.append(line)
+    print(f"  Holidays loaded: {len(holidays)} days")
+    return holidays
 
 
 # ============================================================
-# topシートから最新注文日を取得
+# HTML生成
+# 搬入日ロジックはすべてJS側で実装（毎秒更新）
 # ============================================================
-def load_latest_order_date(excel_path: Path) -> datetime.date | None:
-    """
-    topシートのヘッダー行（1行目）の5列目以降から最新日付を返す
-    """
-    if openpyxl is None or not excel_path.exists():
-        print(f"  WARN: {excel_path.name} not found.")
-        return None
-
-    wb = openpyxl.load_workbook(str(excel_path), data_only=True)
-    if "top" not in wb.sheetnames:
-        print("  WARN: topシートが見つかりません。")
-        return None
-
-    ws = wb["top"]
-    header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-
-    latest = None
-    for cell in header[4:]:  # 5列目以降が日付
-        if cell is None:
-            continue
-        if isinstance(cell, datetime.datetime):
-            d = cell.date()
-        elif isinstance(cell, datetime.date):
-            d = cell
-        else:
-            try:
-                d = datetime.date.fromisoformat(str(cell).strip()[:10])
-            except ValueError:
-                continue
-        if latest is None or d > latest:
-            latest = d
-
-    return latest
-
-
-# ============================================================
-# 搬入日計算（中N日後の稼働日）
-# カレンダーにない日付はフォールバックで平日判定
-# ============================================================
-def calc_delivery_date(
-    order_date: datetime.date,
-    working_days: set,
-    skip: int = 2
-) -> datetime.date:
-
-    def is_working(d: datetime.date) -> bool:
-        if working_days:
-            return d in working_days
-        # フォールバック: 土日除外のみ
-        return d.weekday() < 5
-
-    d = order_date
-    count = 0
-    while count < skip:
-        d += datetime.timedelta(days=1)
-        if is_working(d):
-            count += 1
-
-    d += datetime.timedelta(days=1)
-    while not is_working(d):
-        d += datetime.timedelta(days=1)
-
-    return d
-
-
-# ============================================================
-# HTML生成（CRT 1行表示）
-# ============================================================
-def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
-    wd  = WEEKDAY_EN[delivery.weekday()]
-    mon = MONTH_EN[delivery.month - 1]
-    delivery_str = f"{wd}, {mon} {delivery.day}"
+def generate_html(holidays: list[str]) -> str:
+    # JS配列リテラルを生成
+    holidays_js = ",\n      ".join(f'"{h}"' for h in sorted(holidays))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -216,16 +114,111 @@ def generate_html(delivery: datetime.date, now: datetime.datetime) -> str:
       <span class="val" id="clock">--:--</span>
       <span class="sep">&#9658;</span>
       <span class="lbl">DELIVERY</span>
-      <span class="val">{delivery_str}<span class="cursor"></span></span>
+      <span class="val" id="delivery">--<span class="cursor"></span></span>
     </div>
   </div>
   <script>
+    // ------------------------------------------------
+    // holidays.txt の内容をPythonが埋め込む
+    // ------------------------------------------------
+    const HOLIDAYS = new Set([
+      {holidays_js}
+    ]);
+
+    // ------------------------------------------------
+    // ユーティリティ
+    // ------------------------------------------------
+    function toStr(d) {{
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + dd;
+    }}
+
+    function addDays(d, n) {{
+      const r = new Date(d);
+      r.setDate(r.getDate() + n);
+      return r;
+    }}
+
+    function isWorkday(d) {{
+      const w = d.getDay();
+      if (w === 0 || w === 6) return false;   // 土日
+      if (HOLIDAYS.has(toStr(d))) return false; // 祝日・休業日
+      return true;
+    }}
+
+    // ------------------------------------------------
+    // 搬入日計算
+    //
+    // ルール：
+    //   月〜水 17時前  → 今週木曜
+    //   水    17時以降 → 翌週月曜
+    //   木〜金 17時前  → 翌週月曜
+    //   木〜金 17時以降→ 翌週火曜方向（次の月曜の翌営業日）
+    //   土・日         → 翌週月曜方向
+    //
+    //   ※ 搬入候補日（木 or 月）が祝日の場合は次の営業日にスライド
+    // ------------------------------------------------
+    function getNextDelivery(now) {{
+      const day  = now.getDay();   // 0=日,1=月,2=火,3=水,4=木,5=金,6=土
+      const hour = now.getHours(); // ローカル時刻（JST）
+      const CUTOFF = 17;
+
+      // 17時以降は「翌日」を起点にして計算
+      let base = new Date(now);
+      base.setHours(0, 0, 0, 0);
+      if (hour >= CUTOFF) {{
+        base = addDays(base, 1);
+      }}
+      const baseDay = base.getDay();
+
+      // 次の「木曜」または「月曜」を目標曜日として選ぶ
+      let targetDay;
+      if (baseDay === 1 || baseDay === 2 || baseDay === 3) {{
+        // 月・火・水（17時前）→ 今週木曜
+        targetDay = 4;
+      }} else {{
+        // 水17時以降(base=木), 木17時前, 木17時以降(base=金),
+        // 金, 土, 日 → 翌週月曜
+        targetDay = 1;
+      }}
+
+      let diff = targetDay - baseDay;
+      if (diff <= 0) diff += 7;
+
+      let delivery = addDays(base, diff);
+
+      // 祝日・休業日ならスライド
+      while (!isWorkday(delivery)) {{
+        delivery = addDays(delivery, 1);
+      }}
+
+      return delivery;
+    }}
+
+    // ------------------------------------------------
+    // 表示更新（毎秒）
+    // ------------------------------------------------
+    const DAYS   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN',
+                    'JUL','AUG','SEP','OCT','NOV','DEC'];
+
     function tick() {{
       const now = new Date();
+
+      // 時計
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
       document.getElementById('clock').textContent = hh + ':' + mm;
+
+      // 搬入日（カーソルspanを残しつつテキストだけ更新）
+      const d = getNextDelivery(now);
+      const deliveryEl = document.getElementById('delivery');
+      deliveryEl.firstChild.textContent =
+        DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
     }}
+
     tick();
     setInterval(tick, 1000);
   </script>
@@ -241,52 +234,12 @@ def main():
     now = datetime.datetime.now()
     print(f"[{now:%Y/%m/%d %H:%M:%S}] delivery.py started")
 
-    # カレンダーから稼働日を読み込み
-    working_days = load_working_days(EXCEL_FILE)
+    holidays = load_holidays(HOLIDAYS_FILE)
+    html = generate_html(holidays)
 
-    # topシートから最新注文日を取得
-    order_date = load_latest_order_date(EXCEL_FILE)
-    if order_date is None:
-        order_date = now.date()
-        print(f"  Fallback: using today as order date ({order_date})")
-    else:
-        print(f"  Order date (latest): {order_date}")
-
-    # 搬入日計算
-    delivery = calc_delivery_date(order_date, working_days, SKIP_DAYS)
-    wd  = WEEKDAY_EN[delivery.weekday()]
-    mon = MONTH_EN[delivery.month - 1]
-    print(f"  Delivery date: {delivery} ({wd}, {mon} {delivery.day})")
-
-    # HTML生成
-    html = generate_html(delivery, now)
     OUTPUT_HTML.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
-        f.write(html)
+    OUTPUT_HTML.write_text(html, encoding="utf-8")
     print(f"  Generated: {OUTPUT_HTML}")
-
-    # GitHub push
-    import subprocess
-    repo_dir = OUTPUT_HTML.parent
-    try:
-        subprocess.run(["git", "-C", str(repo_dir), "add", "delivery.html"], check=True)
-        result = subprocess.run(
-            ["git", "-C", str(repo_dir), "status", "--porcelain", "delivery.html"],
-            capture_output=True, text=True
-        )
-        if result.stdout.strip():
-            subprocess.run(
-                ["git", "-C", str(repo_dir), "commit", "-m",
-                 f"delivery: {now.strftime('%Y-%m-%d %H:%M')}"],
-                check=True
-            )
-            subprocess.run(["git", "-C", str(repo_dir), "push", "origin", "main"], check=True)
-            print("  GitHub push: OK")
-        else:
-            print("  GitHub push: skipped (no changes)")
-    except subprocess.CalledProcessError as e:
-        print(f"  GitHub push ERROR: {e}")
-
     print("done.")
 
 
