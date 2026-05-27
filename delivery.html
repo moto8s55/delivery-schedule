@@ -75,16 +75,120 @@
       <span class="val" id="clock">--:--</span>
       <span class="sep">&#9658;</span>
       <span class="lbl">DELIVERY</span>
-      <span class="val">THU, MAY 28<span class="cursor"></span></span>
+      <span class="val" id="delivery">--<span class="cursor"></span></span>
     </div>
   </div>
   <script>
+    // ------------------------------------------------
+    // holidays.txt の内容をPythonが埋め込む
+    // ------------------------------------------------
+    const HOLIDAYS = new Set([
+      "2025-08-13",
+      "2025-08-14",
+      "2025-08-15",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31",
+      "2026-01-02",
+      "2026-01-03",
+      "2026-08-13",
+      "2026-08-14"
+    ]);
+
+    // ------------------------------------------------
+    // ユーティリティ
+    // ------------------------------------------------
+    function toStr(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + dd;
+    }
+
+    function addDays(d, n) {
+      const r = new Date(d);
+      r.setDate(r.getDate() + n);
+      return r;
+    }
+
+    function isWorkday(d) {
+      const w = d.getDay();
+      if (w === 0 || w === 6) return false;   // 土日
+      if (HOLIDAYS.has(toStr(d))) return false; // 祝日・休業日
+      return true;
+    }
+
+    // ------------------------------------------------
+    // 搬入日計算
+    //
+    // ルール：
+    //   月〜水 17時前  → 今週木曜
+    //   水    17時以降 → 翌週月曜
+    //   木〜金 17時前  → 翌週月曜
+    //   木〜金 17時以降→ 翌週火曜方向（次の月曜の翌営業日）
+    //   土・日         → 翌週月曜方向
+    //
+    //   ※ 搬入候補日（木 or 月）が祝日の場合は次の営業日にスライド
+    // ------------------------------------------------
+    function getNextDelivery(now) {
+      const day  = now.getDay();   // 0=日,1=月,2=火,3=水,4=木,5=金,6=土
+      const hour = now.getHours(); // ローカル時刻（JST）
+      const CUTOFF = 17;
+
+      // 17時以降は「翌日」を起点にして計算
+      let base = new Date(now);
+      base.setHours(0, 0, 0, 0);
+      if (hour >= CUTOFF) {
+        base = addDays(base, 1);
+      }
+      const baseDay = base.getDay();
+
+      // 次の「木曜」または「月曜」を目標曜日として選ぶ
+      let targetDay;
+      if (baseDay === 1 || baseDay === 2 || baseDay === 3) {
+        // 月・火・水（17時前）→ 今週木曜
+        targetDay = 4;
+      } else {
+        // 水17時以降(base=木), 木17時前, 木17時以降(base=金),
+        // 金, 土, 日 → 翌週月曜
+        targetDay = 1;
+      }
+
+      let diff = targetDay - baseDay;
+      if (diff <= 0) diff += 7;
+
+      let delivery = addDays(base, diff);
+
+      // 祝日・休業日ならスライド
+      while (!isWorkday(delivery)) {
+        delivery = addDays(delivery, 1);
+      }
+
+      return delivery;
+    }
+
+    // ------------------------------------------------
+    // 表示更新（毎秒）
+    // ------------------------------------------------
+    const DAYS   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN',
+                    'JUL','AUG','SEP','OCT','NOV','DEC'];
+
     function tick() {
       const now = new Date();
+
+      // 時計
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
       document.getElementById('clock').textContent = hh + ':' + mm;
+
+      // 搬入日（カーソルspanを残しつつテキストだけ更新）
+      const d = getNextDelivery(now);
+      const deliveryEl = document.getElementById('delivery');
+      deliveryEl.firstChild.textContent =
+        DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
     }
+
     tick();
     setInterval(tick, 1000);
   </script>
